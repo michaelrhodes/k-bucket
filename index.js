@@ -29,27 +29,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 'use strict'
 
 const randomBytes = require('randombytes')
-const { EventEmitter } = require('events')
-
-/**
- * @param  {Uint8Array} array1
- * @param  {Uint8Array} array2
- * @return {Boolean}
- */
-function arrayEquals (array1, array2) {
-  if (array1 === array2) {
-    return true
-  }
-  if (array1.length !== array2.length) {
-    return false
-  }
-  for (let i = 0, length = array1.length; i < length; ++i) {
-    if (array1[i] !== array2[i]) {
-      return false
-    }
-  }
-  return true
-}
+const arrayEquals = require('./util/arrayEquals')
+const noop = Function.prototype
 
 function createNode () {
   return { contacts: [], dontSplit: false, left: null, right: null }
@@ -67,7 +48,7 @@ function ensureInt8 (name, val) {
  *
  * @extends EventEmitter
  */
-class KBucket extends EventEmitter {
+class KBucket {
   /**
    * `options`:
    *   `distance`: _Function_
@@ -95,8 +76,6 @@ class KBucket extends EventEmitter {
    * @param {Object=} options optional
    */
   constructor (options = {}) {
-    super()
-
     this.localNodeId = options.localNodeId || randomBytes(20)
     this.numberOfNodesPerKBucket = options.numberOfNodesPerKBucket || 20
     this.numberOfNodesToPing = options.numberOfNodesToPing || 3
@@ -104,6 +83,11 @@ class KBucket extends EventEmitter {
     // use an arbiter from options or vectorClock arbiter by default
     this.arbiter = options.arbiter || KBucket.arbiter
     this.metadata = Object.assign({}, options.metadata)
+
+    this.onadded = noop
+    this.onupdated = noop
+    this.onremoved = noop
+    this.onping = noop
 
     ensureInt8('option.localNodeId as parameter 1', this.localNodeId)
 
@@ -172,7 +156,7 @@ class KBucket extends EventEmitter {
 
     if (node.contacts.length < this.numberOfNodesPerKBucket) {
       node.contacts.push(contact)
-      this.emit('added', contact)
+      this.onadded(contact)
       return this
     }
 
@@ -183,7 +167,7 @@ class KBucket extends EventEmitter {
       // in order to determine if they are alive
       // only if one of the pinged nodes does not respond, can the new contact
       // be added (this prevents DoS flodding with new invalid contacts)
-      this.emit('ping', node.contacts.slice(0, this.numberOfNodesToPing), contact)
+      this.onping(node.contacts.slice(0, this.numberOfNodesToPing), contact)
       return this
     }
 
@@ -346,7 +330,7 @@ class KBucket extends EventEmitter {
     const index = this._indexOf(node, id)
     if (index >= 0) {
       const contact = node.contacts.splice(index, 1)[0]
-      this.emit('removed', contact)
+      this.onremoved(contact)
     }
 
     return this
@@ -429,7 +413,7 @@ class KBucket extends EventEmitter {
 
     node.contacts.splice(index, 1) // remove old contact
     node.contacts.push(selection) // add more recent contact version
-    this.emit('updated', incumbent, selection)
+    this.onupdated(incumbent, selection)
   }
 }
 
